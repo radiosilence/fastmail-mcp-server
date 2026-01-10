@@ -4,10 +4,10 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 
 ## Prerequisites
 
-This server requires [Bun](https://bun.sh) runtime:
+Requires [Bun](https://bun.sh) runtime:
 
 ```bash
-# Install Bun (if not already installed)
+# Install Bun
 curl -fsSL https://bun.sh/install | bash
 
 # Or via mise
@@ -16,21 +16,7 @@ mise use -g bun
 
 ## Quick Start
 
-### 1. Install
-
-**Via mise (recommended):**
-
-```bash
-mise use -g npm:fastmail-mcp-server
-```
-
-**Via npm:**
-
-```bash
-npm install -g fastmail-mcp-server
-```
-
-### 2. Generate Fastmail API Token
+### 1. Generate Fastmail API Token
 
 1. Open [Fastmail Settings → Privacy & Security → Integrations](https://app.fastmail.com/settings/security/integrations)
 2. Scroll to **API tokens** and click **Manage**
@@ -43,13 +29,13 @@ npm install -g fastmail-mcp-server
 
 Token format: `fmu1-xxxxxxxx-xxxxxxxxxxxx...`
 
-### 3. Configure Claude Desktop
+### 2. Configure Claude Desktop
 
 Open the Claude Desktop config file:
 
 ```bash
 # macOS
-open ~/Library/Application\ Support/Claude/claude_desktop_config.json
+code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 # Or create it if it doesn't exist
 mkdir -p ~/Library/Application\ Support/Claude
@@ -62,7 +48,8 @@ Add the fastmail server config:
 {
   "mcpServers": {
     "fastmail": {
-      "command": "fastmail-mcp-server",
+      "command": "bunx",
+      "args": ["-y", "fastmail-mcp-server"],
       "env": {
         "FASTMAIL_API_TOKEN": "fmu1-your-token-here"
       }
@@ -71,7 +58,7 @@ Add the fastmail server config:
 }
 ```
 
-### 4. Restart Claude Desktop
+### 3. Restart Claude Desktop
 
 Quit Claude Desktop completely (Cmd+Q) and reopen it. The Fastmail tools should now appear.
 
@@ -152,8 +139,8 @@ No emails can be sent accidentally.
 **Tools not appearing in Claude**
 
 - Check logs: `~/Library/Logs/Claude/mcp*.log`
-- Verify fastmail-mcp-server is in PATH: `which fastmail-mcp-server`
-- Try running it directly to check for errors
+- Make sure bun is installed: `bun --version`
+- Try running directly: `bunx fastmail-mcp-server`
 
 ## How It Works
 
