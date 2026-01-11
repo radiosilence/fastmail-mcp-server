@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-01-11
+
+### Fixed
+
+- Detect images by file extension, not just MIME type (JMAP blob downloads return `application/octet-stream`)
+- Infer correct MIME type from extension for image attachments
+
 ## [0.5.0] - 2026-01-11
 
 ### Added
