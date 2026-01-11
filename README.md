@@ -2,6 +2,15 @@
 
 MCP server for Fastmail. Read, search, organize, and send emails through Claude Desktop.
 
+## Features
+
+- **Full read/write** - list, search, send, reply, move, mark as spam
+- **Safe sending** - preview→confirm flow prevents accidental sends
+- **Attachment text extraction** - PDFs, Word docs, Excel, PowerPoint extracted as readable text
+- **Legacy .doc support** - uses macOS `textutil` for old Word formats
+- **Image attachments** - returned as viewable content for Claude's built-in OCR
+- **CC/BCC support** - full addressing on send and reply
+
 ## Prerequisites
 
 Requires [Bun](https://bun.sh) runtime:
