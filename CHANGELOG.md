@@ -2,16 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.4.2] - 2026-01-11
+## [0.5.0] - 2026-01-11
 
-### Fixed
+### Added
 
-- **Image resizing for model limits** - images over 1MB are automatically resized/compressed to fit within Claude's limits
-  - Uses sharp for high-quality resizing
-  - Progressive quality reduction if needed
-  - Shows original and resized sizes in output
-
-## [0.4.1] - 2026-01-11
+- **Automatic image resizing** - images over 1MB are resized/compressed to fit within Claude's model limits
+  - Uses sharp for high-quality resizing (max 2048px)
+  - Progressive JPEG quality reduction if still too large
+  - Shows original and resized sizes in output (e.g. `1600KB → 850KB resized`)
 
 ### Fixed
 

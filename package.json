@@ -1,52 +1,52 @@
 {
-	"name": "fastmail-mcp-server",
-	"version": "0.4.1",
-	"description": "MCP server for Fastmail - read, search, and send emails via Claude",
-	"type": "module",
-	"main": "src/index.ts",
-	"bin": {
-		"fastmail-mcp-server": "src/index.ts"
-	},
-	"files": [
-		"src/**/*"
-	],
-	"scripts": {
-		"start": "bun run src/index.ts",
-		"test": "bun run src/test.ts",
-		"format": "biome check --write",
-		"lint": "biome check"
-	},
-	"keywords": [
-		"mcp",
-		"fastmail",
-		"jmap",
-		"email",
-		"claude",
-		"ai",
-		"model-context-protocol"
-	],
-	"author": "James Cleveland <jc@blit.cc>",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/radiosilence/fastmail-mcp-server.git"
-	},
-	"bugs": {
-		"url": "https://github.com/radiosilence/fastmail-mcp-server/issues"
-	},
-	"homepage": "https://github.com/radiosilence/fastmail-mcp-server#readme",
-	"engines": {
-		"bun": ">=1.0.0"
-	},
-	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.25.1",
-		"officeparser": "^6.0.4",
-		"sharp": "^0.34.5",
-		"zod": "^4.3.4"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.3.10",
-		"@types/bun": "latest",
-		"@types/sharp": "^0.32.0"
-	}
+  "name": "fastmail-mcp-server",
+  "version": "0.5.0",
+  "description": "MCP server for Fastmail - read, search, and send emails via Claude",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "fastmail-mcp-server": "src/index.ts"
+  },
+  "files": [
+    "src/**/*"
+  ],
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun run src/test.ts",
+    "format": "biome check --write",
+    "lint": "biome check"
+  },
+  "keywords": [
+    "mcp",
+    "fastmail",
+    "jmap",
+    "email",
+    "claude",
+    "ai",
+    "model-context-protocol"
+  ],
+  "author": "James Cleveland <jc@blit.cc>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/radiosilence/fastmail-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/radiosilence/fastmail-mcp-server/issues"
+  },
+  "homepage": "https://github.com/radiosilence/fastmail-mcp-server#readme",
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "officeparser": "^6.0.4",
+    "sharp": "^0.34.5",
+    "zod": "^4.3.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.10",
+    "@types/bun": "latest",
+    "@types/sharp": "^0.32.0"
+  }
 }
