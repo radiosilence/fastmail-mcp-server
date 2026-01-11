@@ -19,7 +19,7 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 | Search emails                     |      ✅      |   ✅    |     ✅      |
 | Send emails                       |      ✅      |   ❌    |     ✅      |
 | Reply to threads                  |      ✅      |   ❌    |     ❌      |
-| CC/BCC support                    |      ✅      |   ❌    |     ❌      |
+| CC/BCC support                    |      ✅      |   ❌    |     ✅      |
 | Safe send (preview→confirm)       |      ✅      |   ❌    |     ❌      |
 | Move/organize emails              |      ✅      |   ❌    |     ❌      |
 | Mark as spam                      |      ✅      |   ❌    |     ❌      |
