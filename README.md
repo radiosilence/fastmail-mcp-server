@@ -16,8 +16,8 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 | Feature                           | radiosilence | @jahfer | willmeyers  |
 | --------------------------------- | :----------: | :-----: | :---------: |
 | Read emails                       |      ✅      |   ✅    |     ✅      |
-| Search emails                     |      ✅      |   ❓    |     ❓      |
-| Send emails                       |      ✅      |   ❌    |     ❌      |
+| Search emails                     |      ✅      |   ✅    |     ✅      |
+| Send emails                       |      ✅      |   ❌    |     ✅      |
 | Reply to threads                  |      ✅      |   ❌    |     ❌      |
 | CC/BCC support                    |      ✅      |   ❌    |     ❌      |
 | Safe send (preview→confirm)       |      ✅      |   ❌    |     ❌      |
@@ -29,8 +29,6 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 | **Images for Claude OCR**         |      ✅      |   ❌    |     ❌      |
 | Bun/TypeScript                    |      ✅      |   ✅    | ❌ (Python) |
 | Actively maintained               |      ✅      |   ❓    |     ❓      |
-
-❓ = undocumented/unclear
 
 ## Prerequisites
 

@@ -24,7 +24,7 @@ import type { Email, EmailAddress, Mailbox } from "./jmap/types.js";
 
 const server = new McpServer({
 	name: "fastmail",
-	version: "0.2.1",
+	version: "0.2.2",
 });
 
 // ============ Formatters ============
