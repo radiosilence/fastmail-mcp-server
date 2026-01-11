@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 async function main() {
 	const transport = new StdioClientTransport({
