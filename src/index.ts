@@ -12,6 +12,7 @@ import {
 	getAttachments,
 	getEmail,
 	getMailboxByName,
+	getThreadEmails,
 	listEmails,
 	listMailboxes,
 	markAsRead,
@@ -145,7 +146,7 @@ server.tool(
 
 server.tool(
 	"get_email",
-	"Get the full content of a specific email by its ID. Returns complete email with headers, body text, and attachment info.",
+	"Get the full content of a specific email by its ID. Automatically includes the full thread context (all emails in the conversation) sorted oldest-first.",
 	{
 		email_id: z
 			.string()
@@ -162,8 +163,31 @@ server.tool(
 			};
 		}
 
-		const text = formatEmailFull(email);
-		return { content: [{ type: "text" as const, text }] };
+		// Get full thread context
+		const threadEmails = await getThreadEmails(email.threadId);
+
+		if (threadEmails.length <= 1) {
+			// Single email, no thread
+			const text = formatEmailFull(email);
+			return { content: [{ type: "text" as const, text }] };
+		}
+
+		// Format thread with all emails
+		const threadText = threadEmails
+			.map((e, i) => {
+				const marker = e.id === email_id ? ">>> SELECTED EMAIL <<<\n" : "";
+				return `${marker}[${i + 1}/${threadEmails.length}]\n${formatEmailFull(e)}`;
+			})
+			.join("\n\n========== THREAD ==========\n\n");
+
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Thread contains ${threadEmails.length} emails:\n\n${threadText}`,
+				},
+			],
+		};
 	},
 );
 

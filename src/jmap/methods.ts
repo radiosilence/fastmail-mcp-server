@@ -121,6 +121,40 @@ export async function getEmail(emailId: string): Promise<Email | null> {
 	return result.list[0] || null;
 }
 
+export async function getThreadEmails(threadId: string): Promise<Email[]> {
+	const client = getClient();
+	const accountId = await client.getAccountId();
+
+	// Get thread to find all email IDs
+	const threadResult = await client.call<{
+		list: { id: string; emailIds: string[] }[];
+	}>("Thread/get", {
+		accountId,
+		ids: [threadId],
+	});
+
+	const thread = threadResult.list[0];
+	if (!thread || thread.emailIds.length === 0) {
+		return [];
+	}
+
+	// Fetch all emails in the thread
+	const emailResult = await client.call<{ list: Email[] }>("Email/get", {
+		accountId,
+		ids: thread.emailIds,
+		properties: EMAIL_FULL_PROPERTIES,
+		fetchTextBodyValues: true,
+		fetchHTMLBodyValues: true,
+		maxBodyValueBytes: 1024 * 1024,
+	});
+
+	// Sort by receivedAt ascending (oldest first)
+	return emailResult.list.sort(
+		(a, b) =>
+			new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+	);
+}
+
 export async function searchEmails(
 	query: string,
 	limit = 25,
