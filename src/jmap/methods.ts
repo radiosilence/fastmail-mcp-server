@@ -128,10 +128,19 @@ export async function searchEmails(
 	const client = getClient();
 	const accountId = await client.getAccountId();
 
-	// Query for email IDs with text filter
+	// Query for email IDs - use OR filter across subject, from, to, and body
+	// Note: Fastmail doesn't support the generic "text" filter
 	const queryResult = await client.call<{ ids: string[] }>("Email/query", {
 		accountId,
-		filter: { text: query },
+		filter: {
+			operator: "OR",
+			conditions: [
+				{ subject: query },
+				{ from: query },
+				{ to: query },
+				{ body: query },
+			],
+		},
 		sort: [{ property: "receivedAt", isAscending: false }],
 		limit,
 	});
