@@ -1,6 +1,6 @@
 {
   "name": "fastmail-mcp-server",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "MCP server for Fastmail - read, search, and send emails via Claude",
   "type": "module",
   "main": "src/index.ts",
@@ -41,10 +41,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
     "officeparser": "^6.0.4",
+    "sharp": "^0.34.5",
     "zod": "^4.3.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/sharp": "^0.32.0"
   }
 }

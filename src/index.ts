@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseOffice } from "officeparser";
+import sharp from "sharp";
 import { z } from "zod";
 import {
 	buildForward,
@@ -810,24 +811,71 @@ server.tool(
 			}
 		}
 
-		const base64 = Buffer.from(result.data).toString("base64");
-
-		// Images - return as image content
+		// Images - return as image content (resize if >1MB for model limits)
 		if (result.type.startsWith("image/")) {
+			const MAX_SIZE = 1024 * 1024; // 1MB
+			let imageData = result.data;
+			let mimeType = result.type;
+			let resized = false;
+
+			if (result.data.byteLength > MAX_SIZE) {
+				try {
+					// Resize to fit under 1MB, convert to JPEG for better compression
+					let quality = 85;
+					let resizedBuffer = await sharp(result.data)
+						.resize({
+							width: 2048,
+							height: 2048,
+							fit: "inside",
+							withoutEnlargement: true,
+						})
+						.jpeg({ quality })
+						.toBuffer();
+
+					// If still too large, reduce quality progressively
+					while (resizedBuffer.byteLength > MAX_SIZE && quality > 30) {
+						quality -= 15;
+						resizedBuffer = await sharp(result.data)
+							.resize({
+								width: 1600,
+								height: 1600,
+								fit: "inside",
+								withoutEnlargement: true,
+							})
+							.jpeg({ quality })
+							.toBuffer();
+					}
+
+					imageData = resizedBuffer;
+					mimeType = "image/jpeg";
+					resized = true;
+				} catch (err) {
+					console.error(`[get_attachment] Image resize failed:`, err);
+					// Fall through with original
+				}
+			}
+
+			const base64 = Buffer.from(imageData).toString("base64");
+			const sizeInfo = resized
+				? `${Math.round(result.size / 1024)}KB → ${Math.round(imageData.byteLength / 1024)}KB resized`
+				: `${Math.round(result.size / 1024)}KB`;
+
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Attachment: ${result.name || "(unnamed)"} (${Math.round(result.size / 1024)}KB)`,
+						text: `Attachment: ${result.name || "(unnamed)"} (${sizeInfo})`,
 					},
 					{
 						type: "image" as const,
 						data: base64,
-						mimeType: result.type,
+						mimeType: mimeType,
 					},
 				],
 			};
 		}
+
+		const base64 = Buffer.from(result.data).toString("base64");
 
 		// Other binary - return base64 as last resort
 		return {
