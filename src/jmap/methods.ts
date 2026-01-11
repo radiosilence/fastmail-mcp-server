@@ -5,6 +5,7 @@ import type {
 	EmailCreate,
 	Identity,
 	Mailbox,
+	MaskedEmail,
 } from "./types.js";
 
 // Standard properties to fetch for email listings
@@ -155,26 +156,109 @@ export async function getThreadEmails(threadId: string): Promise<Email[]> {
 	);
 }
 
+export interface SearchFilter {
+	query?: string; // General search across subject, from, to, body
+	from?: string;
+	to?: string;
+	cc?: string;
+	bcc?: string;
+	subject?: string;
+	body?: string;
+	mailbox?: string; // Mailbox name or ID
+	hasAttachment?: boolean;
+	minSize?: number;
+	maxSize?: number;
+	before?: string; // ISO date or YYYY-MM-DD
+	after?: string; // ISO date or YYYY-MM-DD
+	unread?: boolean;
+	flagged?: boolean;
+}
+
 export async function searchEmails(
-	query: string,
+	filter: string | SearchFilter,
 	limit = 25,
 ): Promise<Email[]> {
 	const client = getClient();
 	const accountId = await client.getAccountId();
 
-	// Query for email IDs - use OR filter across subject, from, to, and body
-	// Note: Fastmail doesn't support the generic "text" filter
+	// Handle simple string query (backwards compat)
+	if (typeof filter === "string") {
+		filter = { query: filter };
+	}
+
+	// Build JMAP filter
+	const jmapFilter: Record<string, unknown> = {};
+
+	// General query - OR across multiple fields (Fastmail doesn't support "text")
+	if (filter.query) {
+		const queryResult = await client.call<{ ids: string[] }>("Email/query", {
+			accountId,
+			filter: {
+				operator: "OR",
+				conditions: [
+					{ subject: filter.query },
+					{ from: filter.query },
+					{ to: filter.query },
+					{ body: filter.query },
+				],
+			},
+			sort: [{ property: "receivedAt", isAscending: false }],
+			limit,
+		});
+
+		if (queryResult.ids.length === 0) {
+			return [];
+		}
+
+		const getResult = await client.call<{ list: Email[] }>("Email/get", {
+			accountId,
+			ids: queryResult.ids,
+			properties: EMAIL_LIST_PROPERTIES,
+		});
+
+		return getResult.list;
+	}
+
+	// Specific field filters
+	if (filter.from) jmapFilter.from = filter.from;
+	if (filter.to) jmapFilter.to = filter.to;
+	if (filter.cc) jmapFilter.cc = filter.cc;
+	if (filter.bcc) jmapFilter.bcc = filter.bcc;
+	if (filter.subject) jmapFilter.subject = filter.subject;
+	if (filter.body) jmapFilter.body = filter.body;
+
+	// Mailbox filter
+	if (filter.mailbox) {
+		const mailbox = await getMailboxByName(filter.mailbox);
+		if (mailbox) {
+			jmapFilter.inMailbox = mailbox.id;
+		}
+	}
+
+	// Boolean/size filters
+	if (filter.hasAttachment) jmapFilter.hasAttachment = true;
+	if (filter.minSize) jmapFilter.minSize = filter.minSize;
+	if (filter.maxSize) jmapFilter.maxSize = filter.maxSize;
+
+	// Date filters - normalize to ISO 8601
+	if (filter.before) {
+		jmapFilter.before = filter.before.includes("T")
+			? filter.before
+			: `${filter.before}T00:00:00Z`;
+	}
+	if (filter.after) {
+		jmapFilter.after = filter.after.includes("T")
+			? filter.after
+			: `${filter.after}T00:00:00Z`;
+	}
+
+	// Keyword filters
+	if (filter.unread) jmapFilter.notKeyword = "$seen";
+	if (filter.flagged) jmapFilter.hasKeyword = "$flagged";
+
 	const queryResult = await client.call<{ ids: string[] }>("Email/query", {
 		accountId,
-		filter: {
-			operator: "OR",
-			conditions: [
-				{ subject: query },
-				{ from: query },
-				{ to: query },
-				{ body: query },
-			],
-		},
+		filter: jmapFilter,
 		sort: [{ property: "receivedAt", isAscending: false }],
 		limit,
 	});
@@ -566,4 +650,153 @@ export async function buildReply(
 		inReplyTo: original.messageId?.[0],
 		references: references.length > 0 ? references : undefined,
 	};
+}
+
+// Helper to build a forward
+export async function buildForward(
+	originalEmailId: string,
+	forwardBody: string,
+): Promise<
+	SendEmailParams & { originalSubject: string; originalFrom: string }
+> {
+	const original = await getEmail(originalEmailId);
+	if (!original) {
+		throw new Error(`Original email not found: ${originalEmailId}`);
+	}
+
+	// Build subject (add Fwd: if not present)
+	let subject = original.subject || "";
+	if (!subject.toLowerCase().startsWith("fwd:")) {
+		subject = `Fwd: ${subject}`;
+	}
+
+	// Get original body
+	let originalBodyText = "";
+	if (original.bodyValues) {
+		const textPart = original.textBody?.[0];
+		if (textPart?.partId && original.bodyValues[textPart.partId]) {
+			originalBodyText = original.bodyValues[textPart.partId]?.value ?? "";
+		} else {
+			const firstValue = Object.values(original.bodyValues)[0];
+			if (firstValue) {
+				originalBodyText = firstValue.value;
+			}
+		}
+	}
+
+	// Format sender
+	const sender = original.from?.[0];
+	const senderStr = sender
+		? sender.name
+			? `${sender.name} <${sender.email}>`
+			: sender.email
+		: "unknown";
+
+	const date = original.receivedAt
+		? new Date(original.receivedAt).toLocaleString()
+		: "unknown date";
+
+	// Build full body with attribution
+	const fullBody = `${forwardBody}
+
+---------- Forwarded message ---------
+From: ${senderStr}
+Date: ${date}
+Subject: ${original.subject || ""}
+
+${originalBodyText}`;
+
+	return {
+		to: [], // Caller must provide
+		subject,
+		textBody: fullBody,
+		originalSubject: original.subject || "",
+		originalFrom: senderStr,
+	};
+}
+
+// ============ Masked Email Methods ============
+
+export async function listMaskedEmails(): Promise<MaskedEmail[]> {
+	const client = getClient();
+	const accountId = await client.getAccountId();
+
+	const result = await client.call<{ list: MaskedEmail[] }>("MaskedEmail/get", {
+		accountId,
+		ids: null, // null = get all
+	});
+
+	return result.list;
+}
+
+export interface CreateMaskedEmailParams {
+	forDomain?: string;
+	description?: string;
+	emailPrefix?: string;
+}
+
+export async function createMaskedEmail(
+	params: CreateMaskedEmailParams = {},
+): Promise<MaskedEmail> {
+	const client = getClient();
+	const accountId = await client.getAccountId();
+
+	const createObj: Record<string, unknown> = {
+		state: "enabled",
+	};
+
+	if (params.forDomain) {
+		createObj.forDomain = params.forDomain;
+	}
+	if (params.description) {
+		createObj.description = params.description;
+	}
+	if (params.emailPrefix) {
+		createObj.emailPrefix = params.emailPrefix;
+	}
+
+	const result = await client.call<{
+		created?: Record<string, MaskedEmail>;
+		notCreated?: Record<string, { type: string; description?: string }>;
+	}>("MaskedEmail/set", {
+		accountId,
+		create: { new: createObj },
+	});
+
+	if (result.notCreated?.new) {
+		const err = result.notCreated.new;
+		throw new Error(
+			`Failed to create masked email: ${err.type}${err.description ? ` - ${err.description}` : ""}`,
+		);
+	}
+
+	const created = result.created?.new;
+	if (!created) {
+		throw new Error("No masked email returned from create");
+	}
+
+	return created;
+}
+
+export async function updateMaskedEmail(
+	id: string,
+	state: "enabled" | "disabled" | "deleted",
+): Promise<void> {
+	const client = getClient();
+	const accountId = await client.getAccountId();
+
+	const result = await client.call<{
+		updated?: Record<string, unknown>;
+		notUpdated?: Record<string, { type: string; description?: string }>;
+	}>("MaskedEmail/set", {
+		accountId,
+		update: { [id]: { state } },
+	});
+
+	if (result.notUpdated?.[id]) {
+		const err = result.notUpdated[id];
+		throw new Error(
+			`Failed to update masked email: ${err.type}${err.description ? ` - ${err.description}` : ""}`,
+		);
+	}
 }

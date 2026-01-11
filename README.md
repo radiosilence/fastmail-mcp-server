@@ -4,12 +4,15 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 
 ## Features
 
-- **Full read/write** - list, search, send, reply, move, mark as spam
+- **Full read/write** - list, search, send, reply, forward, move, mark as spam
 - **Safe sending** - preview→confirm flow prevents accidental sends
+- **Masked emails** - create/manage disposable email addresses
+- **Advanced search** - filter by date, sender, attachments, unread, flagged status
+- **Thread support** - get_email returns full conversation context
 - **Attachment text extraction** - PDFs, Word docs, Excel, PowerPoint extracted as readable text
 - **Legacy .doc support** - uses macOS `textutil` for old Word formats
 - **Image attachments** - returned as viewable content for Claude's built-in OCR
-- **CC/BCC support** - full addressing on send and reply
+- **CC/BCC support** - full addressing on send, reply, and forward
 
 ### Comparison
 
@@ -17,12 +20,16 @@ MCP server for Fastmail. Read, search, organize, and send emails through Claude 
 | --------------------------------- | :----------: | :-----: | :---------: |
 | Read emails                       |      ✅      |   ✅    |     ✅      |
 | Search emails                     |      ✅      |   ✅    |     ✅      |
+| Advanced search filters           |      ✅      |   ❌    |     ❌      |
 | Send emails                       |      ✅      |   ❌    |     ✅      |
 | Reply to threads                  |      ✅      |   ❌    |     ❌      |
+| Forward emails                    |      ✅      |   ❌    |     ❌      |
 | CC/BCC support                    |      ✅      |   ❌    |     ✅      |
 | Safe send (preview→confirm)       |      ✅      |   ❌    |     ❌      |
 | Move/organize emails              |      ✅      |   ❌    |     ❌      |
 | Mark as spam                      |      ✅      |   ❌    |     ❌      |
+| **Masked emails**                 |      ✅      |   ❌    |     ❌      |
+| **Thread context**                |      ✅      |   ❌    |     ❌      |
 | List attachments                  |      ✅      |   ❌    |     ❌      |
 | **Extract text from PDF/DOCX**    |      ✅      |   ❌    |     ❌      |
 | **Extract text from legacy .doc** |      ✅      |   ❌    |     ❌      |
@@ -142,6 +149,17 @@ Claude receives actual text content, not binary blobs - just like when you drag-
 | `mark_as_spam`   | Move to Junk + train filter  | **Yes**      |
 | `send_email`     | Send a new email             | **Yes**      |
 | `reply_to_email` | Reply to an email thread     | **Yes**      |
+| `forward_email`  | Forward an email             | **Yes**      |
+
+### Masked Email Operations
+
+| Tool                   | Description                        |
+| ---------------------- | ---------------------------------- |
+| `list_masked_emails`   | List all masked email addresses    |
+| `create_masked_email`  | Create a new disposable address    |
+| `enable_masked_email`  | Re-enable a disabled masked email  |
+| `disable_masked_email` | Stop receiving at a masked address |
+| `delete_masked_email`  | Permanently delete a masked email  |
 
 ## Example Prompts
 
@@ -152,13 +170,23 @@ Claude receives actual text content, not binary blobs - just like when you drag-
 
 "Search for emails from john@example.com"
 
+"Find unread emails from last week with attachments"
+
+"Show me flagged emails from December"
+
 "What would be a good response to the latest email from the solicitor?"
 
 "Draft a reply to that insurance email explaining the situation"
 
+"Forward that receipt to my accountant"
+
 "Move all the newsletters to Archive"
 
 "Mark that spam email as junk"
+
+"Create a masked email for signing up to this sketchy website"
+
+"List my masked emails and disable the one for that service I cancelled"
 ```
 
 ## Troubleshooting

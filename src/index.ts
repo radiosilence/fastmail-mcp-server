@@ -7,7 +7,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import {
+	buildForward,
 	buildReply,
+	createMaskedEmail,
 	downloadAttachment,
 	getAttachments,
 	getEmail,
@@ -15,17 +17,24 @@ import {
 	getThreadEmails,
 	listEmails,
 	listMailboxes,
+	listMaskedEmails,
 	markAsRead,
 	markAsSpam,
 	moveEmail,
 	searchEmails,
 	sendEmail,
+	updateMaskedEmail,
 } from "./jmap/methods.js";
-import type { Email, EmailAddress, Mailbox } from "./jmap/types.js";
+import type {
+	Email,
+	EmailAddress,
+	Mailbox,
+	MaskedEmail,
+} from "./jmap/types.js";
 
 const server = new McpServer({
 	name: "fastmail",
-	version: "0.2.2",
+	version: "0.4.0",
 });
 
 // ============ Formatters ============
@@ -193,26 +202,76 @@ server.tool(
 
 server.tool(
 	"search_emails",
-	"Search for emails across all mailboxes. Supports full-text search of email content, subjects, and addresses.",
+	"Search for emails with flexible filters. Use 'query' for general search, or specific fields for precise filtering. Supports date ranges, attachment filtering, unread/flagged status.",
 	{
 		query: z
 			.string()
-			.describe(
-				"Search query - searches subject, body, and addresses. Examples: 'from:alice@example.com', 'subject:invoice', 'meeting notes'",
-			),
+			.optional()
+			.describe("General search - searches subject, body, from, and to fields"),
+		from: z.string().optional().describe("Search sender address/name"),
+		to: z.string().optional().describe("Search recipient address/name"),
+		cc: z.string().optional().describe("Search CC recipients"),
+		subject: z.string().optional().describe("Search subject line only"),
+		body: z.string().optional().describe("Search email body only"),
+		mailbox: z
+			.string()
+			.optional()
+			.describe("Limit search to a specific mailbox/folder"),
+		has_attachment: z
+			.boolean()
+			.optional()
+			.describe("Only emails with attachments"),
+		before: z
+			.string()
+			.optional()
+			.describe("Emails before this date (YYYY-MM-DD or ISO 8601)"),
+		after: z
+			.string()
+			.optional()
+			.describe("Emails after this date (YYYY-MM-DD or ISO 8601)"),
+		unread: z.boolean().optional().describe("Only unread emails"),
+		flagged: z.boolean().optional().describe("Only flagged/starred emails"),
 		limit: z
 			.number()
 			.optional()
 			.describe("Maximum number of results (default 25, max 100)"),
 	},
-	async ({ query, limit }) => {
-		const emails = await searchEmails(query, Math.min(limit || 25, 100));
+	async ({
+		query,
+		from,
+		to,
+		cc,
+		subject,
+		body,
+		mailbox,
+		has_attachment,
+		before,
+		after,
+		unread,
+		flagged,
+		limit,
+	}) => {
+		const emails = await searchEmails(
+			{
+				query,
+				from,
+				to,
+				cc,
+				subject,
+				body,
+				mailbox,
+				hasAttachment: has_attachment,
+				before,
+				after,
+				unread,
+				flagged,
+			},
+			Math.min(limit || 25, 100),
+		);
 
 		if (emails.length === 0) {
 			return {
-				content: [
-					{ type: "text" as const, text: `No emails found for: ${query}` },
-				],
+				content: [{ type: "text" as const, text: "No emails found." }],
 			};
 		}
 
@@ -502,6 +561,79 @@ Email ID: ${emailId}`,
 	},
 );
 
+server.tool(
+	"forward_email",
+	"Forward an email to new recipients. CRITICAL: You MUST call with action='preview' first, show the user the draft, get explicit approval, then call again with action='confirm'. NEVER skip the preview step.",
+	{
+		action: z
+			.enum(["preview", "confirm"])
+			.describe(
+				"'preview' to see the draft, 'confirm' to send - ALWAYS preview first",
+			),
+		email_id: z.string().describe("The email ID to forward"),
+		to: z.string().describe("Recipient email address(es), comma-separated"),
+		body: z
+			.string()
+			.describe("Your message to include above the forwarded content"),
+		cc: z.string().optional().describe("CC recipients, comma-separated"),
+		bcc: z
+			.string()
+			.optional()
+			.describe("BCC recipients (hidden), comma-separated"),
+	},
+	async ({ action, email_id, to, body, cc, bcc }) => {
+		const parseAddresses = (s: string): EmailAddress[] =>
+			s.split(",").map((e) => ({ name: null, email: e.trim() }));
+
+		const forwardParams = await buildForward(email_id, body);
+		forwardParams.to = parseAddresses(to);
+
+		if (cc) {
+			forwardParams.cc = parseAddresses(cc);
+		}
+		if (bcc) {
+			forwardParams.bcc = parseAddresses(bcc);
+		}
+
+		if (action === "preview") {
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `📧 FORWARD PREVIEW - Review before sending:
+
+To: ${formatAddressList(forwardParams.to)}
+CC: ${forwardParams.cc ? formatAddressList(forwardParams.cc) : "(none)"}
+BCC: ${forwardParams.bcc ? formatAddressList(forwardParams.bcc) : "(none)"}
+Subject: ${forwardParams.subject}
+Forwarding from: ${forwardParams.originalFrom}
+
+--- Your Message + Forwarded Content ---
+${forwardParams.textBody}
+
+---
+To send this forward, call this tool again with action: "confirm" and the same parameters.`,
+					},
+				],
+			};
+		}
+
+		const emailId = await sendEmail(forwardParams);
+
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `✓ Email forwarded successfully!
+To: ${formatAddressList(forwardParams.to)}
+Subject: ${forwardParams.subject}
+Email ID: ${emailId}`,
+				},
+			],
+		};
+	},
+);
+
 // ============ Attachment Tools ============
 
 server.tool(
@@ -705,6 +837,135 @@ server.tool(
 					text: `Attachment: ${result.name || "(unnamed)"}\nType: ${result.type}\nSize: ${Math.round(result.size / 1024)}KB\nEncoding: base64\n\n${base64}`,
 				},
 			],
+		};
+	},
+);
+
+// ============ Masked Email Tools ============
+
+function formatMaskedEmail(m: MaskedEmail): string {
+	const status = m.state || "unknown";
+	const domain = m.forDomain ? ` (${m.forDomain})` : "";
+	const desc = m.description ? ` - ${m.description}` : "";
+	const lastMsg = m.lastMessageAt
+		? `\n   Last message: ${new Date(m.lastMessageAt).toLocaleString()}`
+		: "";
+	return `${m.email}${domain}${desc}\n   Status: ${status}${lastMsg}\n   ID: ${m.id}`;
+}
+
+server.tool(
+	"list_masked_emails",
+	"List all masked email addresses (aliases) in the account. Masked emails let you create disposable addresses that forward to your inbox.",
+	{},
+	async () => {
+		const maskedEmails = await listMaskedEmails();
+
+		if (maskedEmails.length === 0) {
+			return {
+				content: [{ type: "text" as const, text: "No masked emails found." }],
+			};
+		}
+
+		// Sort by state (enabled first), then by email
+		const sorted = maskedEmails.sort((a, b) => {
+			if (a.state === "enabled" && b.state !== "enabled") return -1;
+			if (a.state !== "enabled" && b.state === "enabled") return 1;
+			return a.email.localeCompare(b.email);
+		});
+
+		const text = sorted.map(formatMaskedEmail).join("\n\n");
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Masked Emails (${maskedEmails.length}):\n\n${text}`,
+				},
+			],
+		};
+	},
+);
+
+server.tool(
+	"create_masked_email",
+	"Create a new masked email address. Perfect for signups where you want a disposable address. The masked email forwards to your inbox.",
+	{
+		for_domain: z
+			.string()
+			.optional()
+			.describe(
+				"The website/domain this masked email is for (e.g., 'netflix.com')",
+			),
+		description: z
+			.string()
+			.optional()
+			.describe(
+				"A note to remember what this is for (e.g., 'Netflix account')",
+			),
+		prefix: z
+			.string()
+			.optional()
+			.describe(
+				"Custom prefix for the email address (optional, random if not specified)",
+			),
+	},
+	async ({ for_domain, description, prefix }) => {
+		const maskedEmail = await createMaskedEmail({
+			forDomain: for_domain,
+			description,
+			emailPrefix: prefix,
+		});
+
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Created masked email:\n\n${formatMaskedEmail(maskedEmail)}`,
+				},
+			],
+		};
+	},
+);
+
+server.tool(
+	"enable_masked_email",
+	"Enable a disabled masked email address so it can receive emails again.",
+	{
+		id: z.string().describe("The masked email ID (from list_masked_emails)"),
+	},
+	async ({ id }) => {
+		await updateMaskedEmail(id, "enabled");
+		return {
+			content: [{ type: "text" as const, text: `Masked email ${id} enabled.` }],
+		};
+	},
+);
+
+server.tool(
+	"disable_masked_email",
+	"Disable a masked email address. Emails sent to it will be rejected but the address is preserved.",
+	{
+		id: z.string().describe("The masked email ID (from list_masked_emails)"),
+	},
+	async ({ id }) => {
+		await updateMaskedEmail(id, "disabled");
+		return {
+			content: [
+				{ type: "text" as const, text: `Masked email ${id} disabled.` },
+			],
+		};
+	},
+);
+
+server.tool(
+	"delete_masked_email",
+	"Permanently delete a masked email address. This cannot be undone!",
+	{
+		id: z.string().describe("The masked email ID (from list_masked_emails)"),
+	},
+	async ({ id }) => {
+		await updateMaskedEmail(id, "deleted");
+		return {
+			content: [{ type: "text" as const, text: `Masked email ${id} deleted.` }],
 		};
 	},
 );

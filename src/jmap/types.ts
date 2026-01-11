@@ -202,3 +202,16 @@ export interface EmailCreate {
 	messageId?: string[];
 	headers?: EmailHeader[];
 }
+
+// Masked Email Types (Fastmail-specific)
+export interface MaskedEmail {
+	id: string;
+	email: string;
+	state?: string; // pending, enabled, disabled, deleted
+	forDomain?: string | null;
+	description?: string | null;
+	lastMessageAt?: string | null;
+	createdAt?: string | null;
+	createdBy?: string | null;
+	url?: string | null;
+}
