@@ -4,6 +4,7 @@ import {
 	ResourceTemplate,
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { parseOffice } from "officeparser";
 import { z } from "zod";
 import {
 	buildReply,
@@ -23,7 +24,7 @@ import type { Email, EmailAddress, Mailbox } from "./jmap/types.js";
 
 const server = new McpServer({
 	name: "fastmail",
-	version: "0.1.0",
+	version: "0.2.0",
 });
 
 // ============ Formatters ============
@@ -98,7 +99,7 @@ ${body}`;
 
 server.tool(
 	"list_mailboxes",
-	"List all mailboxes (folders) in the account with their unread counts. Use this to discover available folders before listing emails.",
+	"List all mailboxes (folders) in the account with their unread counts. START HERE - use this to discover available folders before listing emails.",
 	{},
 	async () => {
 		const mailboxes = await listMailboxes();
@@ -281,14 +282,12 @@ server.tool(
 
 server.tool(
 	"mark_as_spam",
-	"Mark an email as spam. This moves it to the Junk folder AND trains the spam filter. USE WITH CAUTION - this affects future filtering. Requires explicit confirmation.",
+	"Mark an email as spam. This moves it to Junk AND trains the spam filter - affects future filtering! MUST use action='preview' first, then 'confirm' after user approval.",
 	{
 		email_id: z.string().describe("The email ID to mark as spam"),
 		action: z
 			.enum(["preview", "confirm"])
-			.describe(
-				"'preview' to see what will happen, 'confirm' to actually mark as spam",
-			),
+			.describe("'preview' first, then 'confirm' after user approval"),
 	},
 	async ({ email_id, action }) => {
 		const email = await getEmail(email_id);
@@ -335,11 +334,13 @@ To proceed, call this tool again with action: "confirm"`,
 
 server.tool(
 	"send_email",
-	"Compose and send a new email. ALWAYS use action='preview' first to review the draft before sending.",
+	"Compose and send a new email. CRITICAL: You MUST call with action='preview' first, show the user the draft, get explicit approval, then call again with action='confirm'. NEVER skip the preview step.",
 	{
 		action: z
 			.enum(["preview", "confirm"])
-			.describe("'preview' to see the draft, 'confirm' to send"),
+			.describe(
+				"'preview' to see the draft, 'confirm' to send - ALWAYS preview first",
+			),
 		to: z.string().describe("Recipient email address(es), comma-separated"),
 		subject: z.string().describe("Email subject line"),
 		body: z.string().describe("Email body text"),
@@ -404,11 +405,13 @@ Email ID: ${emailId}`,
 
 server.tool(
 	"reply_to_email",
-	"Reply to an existing email thread. ALWAYS use action='preview' first to review the draft before sending. For reply-all, include original CC recipients in the cc param.",
+	"Reply to an existing email thread. CRITICAL: You MUST call with action='preview' first, show the user the draft, get explicit approval, then call again with action='confirm'. NEVER skip the preview step. For reply-all, include original CC recipients in the cc param.",
 	{
 		action: z
 			.enum(["preview", "confirm"])
-			.describe("'preview' to see the draft, 'confirm' to send"),
+			.describe(
+				"'preview' to see the draft, 'confirm' to send - ALWAYS preview first",
+			),
 		email_id: z.string().describe("The email ID to reply to"),
 		body: z
 			.string()
@@ -515,9 +518,90 @@ server.tool(
 	},
 );
 
+// File types that officeparser can extract text from
+const EXTRACTABLE_TYPES = [
+	"application/pdf",
+	"application/msword", // .doc
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+	"application/vnd.ms-excel", // .xls
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+	"application/vnd.ms-powerpoint", // .ppt
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+	"application/rtf",
+	"application/vnd.oasis.opendocument.text", // .odt
+	"application/vnd.oasis.opendocument.spreadsheet", // .ods
+	"application/vnd.oasis.opendocument.presentation", // .odp
+];
+
+// Also match by extension for when MIME types are wrong
+const EXTRACTABLE_EXTENSIONS = [
+	".pdf",
+	".doc",
+	".docx",
+	".xls",
+	".xlsx",
+	".ppt",
+	".pptx",
+	".rtf",
+	".odt",
+	".ods",
+	".odp",
+];
+
+function canExtractText(mimeType: string, filename: string | null): boolean {
+	// Check MIME type first
+	if (EXTRACTABLE_TYPES.includes(mimeType)) return true;
+
+	// Check extension - this catches octet-stream with proper filenames
+	if (filename) {
+		const ext = filename.toLowerCase().match(/\.[^.]+$/)?.[0];
+		console.error(`[canExtractText] filename=${filename}, ext=${ext}`);
+		if (ext && EXTRACTABLE_EXTENSIONS.includes(ext)) return true;
+	}
+
+	return false;
+}
+
+async function extractText(
+	data: Uint8Array,
+	filename: string | null,
+): Promise<string> {
+	const buffer = Buffer.from(data);
+	const ext = filename?.toLowerCase().match(/\.[^.]+$/)?.[0];
+
+	// For .doc files, use macOS textutil (officeparser doesn't handle old OLE format well)
+	if (ext === ".doc") {
+		console.error("[extractText] Using textutil for .doc file");
+		const tmpPath = `/tmp/fastmail-${Date.now()}.doc`;
+		await Bun.write(tmpPath, buffer);
+		try {
+			const proc = Bun.spawn([
+				"textutil",
+				"-convert",
+				"txt",
+				"-stdout",
+				tmpPath,
+			]);
+			const output = await new Response(proc.stdout).text();
+			return output;
+		} finally {
+			(await Bun.file(tmpPath).exists()) &&
+				(await Bun.$`rm ${tmpPath}`.quiet());
+		}
+	}
+
+	// For everything else, use officeparser
+	const result = await parseOffice(buffer, { outputFormat: "text" });
+	if (typeof result === "string") {
+		return result;
+	}
+	// AST result - extract text from it
+	return JSON.stringify(result, null, 2);
+}
+
 server.tool(
 	"get_attachment",
-	"Download and read an attachment's content. Works best with text-based files (txt, csv, json, xml, html, etc). Binary files are returned as base64.",
+	"Download an attachment. Text files and documents (PDF, DOC, DOCX, XLS, PPT, etc) have text extracted and returned. Images returned as viewable content.",
 	{
 		email_id: z.string().describe("The email ID the attachment belongs to"),
 		blob_id: z
@@ -527,6 +611,11 @@ server.tool(
 	async ({ email_id, blob_id }) => {
 		const result = await downloadAttachment(email_id, blob_id);
 
+		console.error(
+			`[get_attachment] Downloaded ${result.size} bytes, type: ${result.type}, name: ${result.name}`,
+		);
+
+		// Plain text - return directly
 		if (result.isText) {
 			return {
 				content: [
@@ -538,12 +627,58 @@ server.tool(
 			};
 		}
 
-		// Binary content - return as base64 with warning
+		// Documents - extract text
+		const shouldExtract = canExtractText(result.type, result.name);
+		console.error(
+			`[get_attachment] canExtractText(${result.type}, ${result.name}) = ${shouldExtract}`,
+		);
+
+		if (shouldExtract) {
+			try {
+				console.error(`[get_attachment] Extracting text from ${result.type}`);
+				const text = await extractText(result.data, result.name);
+				console.error(
+					`[get_attachment] Extracted ${text.length} chars of text`,
+				);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Attachment: ${result.name || "(unnamed)"}\nType: ${result.type}\nSize: ${Math.round(result.size / 1024)}KB\n\n--- Extracted Text ---\n${text}`,
+						},
+					],
+				};
+			} catch (err) {
+				console.error(`[get_attachment] Text extraction failed:`, err);
+				// Fall through to base64
+			}
+		}
+
+		const base64 = Buffer.from(result.data).toString("base64");
+
+		// Images - return as image content
+		if (result.type.startsWith("image/")) {
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Attachment: ${result.name || "(unnamed)"} (${Math.round(result.size / 1024)}KB)`,
+					},
+					{
+						type: "image" as const,
+						data: base64,
+						mimeType: result.type,
+					},
+				],
+			};
+		}
+
+		// Other binary - return base64 as last resort
 		return {
 			content: [
 				{
 					type: "text" as const,
-					text: `Attachment: ${result.name || "(unnamed)"}\nType: ${result.type}\n\nThis is a binary file. Base64 content (first 1000 chars):\n${result.content.slice(0, 1000)}${result.content.length > 1000 ? "..." : ""}`,
+					text: `Attachment: ${result.name || "(unnamed)"}\nType: ${result.type}\nSize: ${Math.round(result.size / 1024)}KB\nEncoding: base64\n\n${base64}`,
 				},
 			],
 		};

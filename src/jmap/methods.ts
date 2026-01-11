@@ -434,8 +434,10 @@ export async function downloadAttachment(
 	blobId: string,
 ): Promise<{
 	content: string;
+	data: Uint8Array;
 	type: string;
 	name: string | null;
+	size: number;
 	isText: boolean;
 }> {
 	const client = getClient();
@@ -449,6 +451,7 @@ export async function downloadAttachment(
 	}
 
 	const { data, type } = await client.downloadBlob(blobId, accountId);
+	const bytes = new Uint8Array(data);
 
 	// Determine if it's text-based content
 	const isText =
@@ -456,26 +459,28 @@ export async function downloadAttachment(
 		type.includes("json") ||
 		type.includes("xml") ||
 		type.includes("javascript") ||
-		type.includes("csv") ||
-		type === "application/pdf"; // We'll try to extract text from PDFs
+		type.includes("csv");
 
-	if (isText && type !== "application/pdf") {
+	if (isText) {
 		// Return as text
 		const decoder = new TextDecoder();
 		return {
 			content: decoder.decode(data),
+			data: bytes,
 			type,
 			name: attachment.name,
+			size: bytes.length,
 			isText: true,
 		};
 	}
 
-	// For binary files (including PDFs for now), return base64
-	const base64 = Buffer.from(data).toString("base64");
+	// For binary files, return raw data (caller decides what to do)
 	return {
-		content: base64,
+		content: "", // Not used for binary
+		data: bytes,
 		type,
 		name: attachment.name,
+		size: bytes.length,
 		isText: false,
 	};
 }
